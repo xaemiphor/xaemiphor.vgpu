@@ -1,0 +1,17 @@
+---
+profile: production
+
+offline: true
+
+exclude_paths:
+  - .cache/
+  - .github/
+
+enable_list:
+  - empty-string-compare # opt-in
+  - no-log-password # opt-in
+  - no-same-owner # opt-in
+  - name[prefix] # opt-in
+
+skip_list:
+  - yaml[line-length]

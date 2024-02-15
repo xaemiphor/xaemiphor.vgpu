@@ -1,0 +1,24 @@
+name: generate-todo
+on:
+  push:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    name: Run todo and commit changes
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate todo
+        uses: docker://ghcr.io/xaemiphor/gen-todo:0.0.1
+        env:
+          ignore: |
+            .gitignore
+      - name: Commit and push changes
+        uses: docker://ghcr.io/xaemiphor/git-push:0.0.1
+        env:
+          commit_message: "auto-ci: Commit updated TODO"
+          commit_glob: |
+            TODO.md
