@@ -1,0 +1,106 @@
+---
+- name: install | Get list of nVIDIA PCI devices
+  become: true
+  ansible.builtin.command:
+    cmd: "/usr/bin/lspci -n -d '10de:'"
+  changed_when: false
+  register: __nvidia_devices
+
+- name: nVIDIA devices detected
+  when: __nvidia_devices.stdout_lines | length > 0
+  block:
+    - name: 'install | Install apt deps'
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - git
+          - build-essential
+
+    - name: "install | Clone vgpu_unlock-rs"
+      become: true
+      ansible.builtin.git:
+        repo: "{{ item.repo }}"
+        dest: "/opt/{{ item.dest }}"
+        version: "{{ item.version | default(omit) }}"
+        single_branch: true
+        depth: 1
+        accept_newhostkey: true
+        track_submodules: true
+      loop:
+        - { repo: 'https://github.com/mbilker/vgpu_unlock-rs.git', dest: 'vgpu_unlock-rs' }
+
+    # Setup RUST
+    - name: install | Setup rust/cargo
+      become: true
+      ansible.builtin.shell:
+        cmd: 'curl https://sh.rustup.rs -sSf | sh -s -- -y'
+        creates: '/root/.cargo/bin/cargo'
+      tags:
+        - skip_ansible_lint
+
+    # Build project
+    - name: install | Build vgpu_unlock-rs
+      become: true
+      ansible.builtin.command:
+        cmd: '/root/.cargo/bin/cargo build --release'
+        chdir: '/opt/vgpu_unlock-rs'
+        creates: '/opt/vgpu_unlock-rs/target/release/libvgpu_unlock_rs.so'
+
+    - name: install | Prepare service injection
+      become: true
+      ansible.builtin.file:
+        state: '{{ item.state }}'
+        path: "{{ item.path }}"
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - { path: '/etc/vgpu_unlock', state: 'directory' }
+        - { path: '/etc/systemd/system/nvidia-vgpud.service.d', state: 'directory' }
+        - { path: '/etc/systemd/system/nvidia-vgpu-mgr.service.d', state: 'directory' }
+
+    - name: install | Create config files
+      become: true
+      ansible.builtin.copy:
+        content: ""
+        dest: "{{ item }}"
+        force: false
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - /etc/vgpu_unlock/profile_override.toml
+        - /etc/vgpu_unlock/config.toml
+
+
+    # Prepare for systemd to pick this up later
+    - name: install | Add vgpu_unlock-rs injection to systemd
+      become: true
+      ansible.builtin.copy:
+        dest: "{{ item }}/vgpu_unlock.conf"
+        src: "vgpu_unlock.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - '/etc/systemd/system/nvidia-vgpud.service.d'
+        - '/etc/systemd/system/nvidia-vgpu-mgr.service.d'
+      notify:
+        - 'vgpu_handlers : Reload systemd daemon'
+        - 'vgpu_handlers : Restart nvidia-vgpu'
+
+    - name: install | Disable unlock if supported card is detected
+      become: true
+      ansible.builtin.lineinfile:
+        state: present
+        path: /etc/vgpu_unlock/config.toml
+        line: 'unlock = false'
+      when:
+        - __detected_ids | intersect(__supported_ids | sort) | length > 0
+      vars:
+        __detected_ids: "{{ __nvidia_devices.stdout_lines | map('regex_findall', '^\\s*[0-f]{2}:[0-f]{2}.*([0-f]{4}:[0-f]{4}).*$') | flatten | sort }}"
+        __supported_ids:
+          - 10de:1431 # NVIDIA Corporation GM206GL [Tesla M4]
+          - 10de:17fd # NVIDIA Corporation GM200GL [Tesla M40]
+          - 10de:1bb3 # NVIDIA Corporation GP104GL [Tesla P4]
+          - 10de:1b38 # NVIDIA Corporation GP102GL [Tesla P40]

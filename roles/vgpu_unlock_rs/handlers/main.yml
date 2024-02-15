@@ -1,0 +1,21 @@
+---
+- name: 'vgpu_handlers : Reload systemd daemon'
+  become: true
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: 'vgpu_handlers : Restart nvidia-vgpud'
+  become: true
+  ansible.builtin.service:
+    state: restarted
+    name: nvidia-vgpud
+  listen:
+    - 'vgpu_handlers : Restart nvidia-vgpu'
+
+- name: 'vgpu_handlers : Restart nvidia-vgpu-mgr'
+  become: true
+  ansible.builtin.service:
+    state: restarted
+    name: nvidia-vgpu-mgr
+  listen:
+    - 'vgpu_handlers : Restart nvidia-vgpu'

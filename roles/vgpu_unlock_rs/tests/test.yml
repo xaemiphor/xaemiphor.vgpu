@@ -1,0 +1,6 @@
+---
+- name: Test vgpu_unlock_rs role
+  hosts: localhost
+  remote_user: root
+  roles:
+    - vgpu_unlock_rs

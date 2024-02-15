@@ -1,0 +1,3 @@
+---
+- name: 'Load tasks'
+  ansible.builtin.include_tasks: "{{ 'install' if vgpu_unlock_rs_state in ['enable', 'enabled'] else 'remove' }}.yml"
